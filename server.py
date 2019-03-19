@@ -1,5 +1,7 @@
-import socket, threading, time, sys
-
+import socket, time, threading, sys, pymongo
+from multiprocessing import Process
+from MongoDB import Database
+db = Database()
 rooms = []
 
 class Room:
@@ -10,11 +12,13 @@ class Room:
         print('sending message: '+msg)
         for i in range(len(self.connections)):
             try:
+                msg = msg + '\n'
                 self.connections[i].send(msg.encode())
             except:
                 print('error sending msg')
     def addCon(self, con):
         self.connections.append(con)
+        #self.sendMsg("Client has connected.");
 
 class Connection:
     def __init__(self,client,address, server):
@@ -59,13 +63,22 @@ class Connection:
         
         if self.username != False and self.type != False and self.action != False:
             print('success' + self.username)
-            
+            print('action: '+self.action)
             if self.action == 'newRoom':
                 room = Room(self.username)
                 rooms.append(room)
                 self.connectToRoom(self.username)
             if self.action == 'connectToRoom':
                 self.connectToRoom(self.recvMsg())
+            if self.action == 'record':
+                locallist = db.getData()
+                try:
+                    line = str(locallist[0][self.username]) + '\n'
+                except:
+                    line = 'Error getting values!\n'
+
+                print(line)
+                self.client.send(line.encode())
         else:
             print('failed :(')
             
@@ -75,10 +88,10 @@ class Connection:
 class Server:
     def __init__(self, port):
         while True:
-            print('server created')
             try:
                 self.port = port
                 self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 self.socket.bind(('',port))
                 print('successfully binded!')
                 break
@@ -91,7 +104,9 @@ class Server:
             client, address = self.socket.accept()
             connection = Connection(client, address, self)
             threading.Thread(target = connection.start).start()
-
+    def close(self):
+        self.socket.close()
+        
 def commands():
     while True:
         command = input()
@@ -100,7 +115,20 @@ def commands():
         if command == 'sendAll':
             for i in range(len(rooms)):
                 rooms[i].sendMsg(input('enter msg to send'))
+        if command == 'clearRooms':
+            print('cleared')
+        if command == 'end':
+            print('trying to end')
+            server.close()
+            sys.exit()
+        if command == 'getData':
+            locallist = db.getData()
+            print(locallist[0])
 
 threading.Thread(target=commands).start()
+
 server = Server(4545)
-server.listen()
+try:    
+    server.listen()
+except:
+    server.close()
